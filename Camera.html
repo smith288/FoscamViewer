@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Security Camera</title>
+
+
+    <!-- Latest compiled and minified CSS -->
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css" integrity="sha384-1q8mTJOASx8j1Au+a5WDVnPi2lkFfwwEAa8hDDdjZlpLegxhjVME1fgjWPGmkzs7" crossorigin="anonymous">
+
+    <!-- Optional theme -->
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap-theme.min.css" integrity="sha384-fLW2N01lMqjakBkx3l/M9EahuwpSfeNvV63J5ezn3uZzapT0u7EYsXMjQV+0En5r" crossorigin="anonymous">
+
+    <!-- jQuery (necessary for Bootstrap's JavaScript plugins) -->
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.3/jquery.min.js"></script>
+
+    <!-- Latest compiled and minified JavaScript -->
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/js/bootstrap.min.js" integrity="sha384-0mSbJDEHialfmuBBQP6A4Qrprq5OVfW37PRR3j5ELqxss1yVqOtnepnHVP9aJ7xS" crossorigin="anonymous"></script>
+    <!-- HTML5 shim and Respond.js for IE8 support of HTML5 elements and media queries -->
+    <!--[if lt IE 9]>
+      <script src="https://oss.maxcdn.com/html5shiv/3.7.2/html5shiv.min.js"></script>
+      <script src="https://oss.maxcdn.com/respond/1.4.2/respond.min.js"></script>
+    <![endif]-->
+
+    <script type="text/javascript">
+        var cameraHost;
+        var cameraPort;
+        var cameraUsername;
+        var cameraPassdword;
+        var cameraBaseUrl;
+        var cameraAuth;
+        var cameraStreamUrl;
+        var vlc;
+
+        if (typeof(Storage) !== "undefined") {} else {
+            alert('You can\'t use this as you don\'t have local file storage capable browser');
+        }
+
+        $(document).ready(function() {
+            $('[data-toggle="tooltip"]').tooltip()
+
+            $('.foscam-setup').hide();
+            $('.foscam-showcase').hide();
+
+            $('#logout').click(function() {
+                sessionStorage.removeItem('foscamSettings');
+                document.location.replace(document.location);
+            });
+
+            $('#btnLogin').click(function(e) {
+                e.preventDefault();
+                login();
+            });
+
+            $('#cameraAlarmHttp').change(function() {
+
+            });
+
+            var loggedIn = sessionStorage.foscamSettings;
+            if (loggedIn) {
+                $('.foscam-setup').hide();
+                $('.foscam-showcase').show();
+                cameraHost = loggedIn.split('|')[0];
+                cameraPort = loggedIn.split('|')[1];
+                cameraUsername = loggedIn.split('|')[2];
+                cameraPassword = loggedIn.split('|')[3];
+                cameraBaseUrl = "http://" + cameraUsername + ':' + cameraPassword + '@' + cameraHost + ":" + cameraPort + "/";
+                cameraAuth = "user=" + cameraUsername + "&pwd=" + cameraPassword;
+                cameraStreamUrl = cameraBaseUrl + "videostream.cgi?" + cameraAuth;
+                $('#cameraStreamImg').prop('src', cameraStreamUrl);
+                getStatus();
+                getParams();
+
+            } else {
+                $('.foscam-setup').show();
+                $('.foscam-showcase').hide();
+                var prevLogin = localStorage.getItem('foscamLogin');
+                if (prevLogin) {
+                    $('#cameraHost').val(prevLogin.split('|')[0]);
+                    $('#cameraPort').val(prevLogin.split('|')[1]);
+                    $('#cameraUsername').val(cameraUsername = prevLogin.split('|')[2]);
+                }
+            }
+        });
+
+        function login() {
+            $('.foscam-setup').hide();
+            $('.foscam-showcase').hide();
+            $('.cameraLoginProgress').show();
+            cameraHost = $('#cameraHost').val();
+            cameraPort = $('#cameraPort').val();
+            cameraUsername = $('#cameraUsername').val();
+            cameraPassword = $('#cameraPassword').val();
+            cameraBaseUrl = "http://" + cameraHost + ":" + cameraPort + "/";
+            cameraAuth = "user=" + cameraUsername + "&pwd=" + cameraPassword;
+
+            $.ajax({
+                url: 'http://' + cameraHost + ':' + cameraPort + '/check_user2.cgi?' + cameraAuth,
+                crossDomain: true,
+                dataType: "script",
+                success: function(data, textStatus) {
+                    if (pri == '3') {
+                        var scook = cameraHost + '|' + cameraPort + '|' + cameraUsername + '|' + cameraPassword;
+                        sessionStorage.foscamSettings = scook;
+                        localStorage.setItem('foscamLogin', cameraHost + '|' + cameraPort + '|' + cameraUsername);
+                        document.location.replace(document.location);
+                    }
+                },
+                error: function(data) {
+                    $('.foscam-setup').show();
+                    $('.foscam-showcase').hide();
+                    $('.cameraLoginProgress').hide();
+                }
+            });
+        }
+
+        function hideVLCPlugin() {
+
+            if (vlc.playlist != null && vlc.playlist.items.count && vlc.playlist.isPlaying)
+                vlc.playlist.stop();
+            $('#cameraVLCPlugin').hide();
+            $('#cameraStreamImg').show();
+        }
+
+        function showVLCPlugin() {
+            $('#cameraVLCplugin').show();
+            $('#cameraStreamImg').hide();
+
+            vlc = document.getElementById('vlc');
+
+            vlc.playlist.items.clear();
+            vlc.style.width = 640;
+            vlc.style.height = 480;
+
+            str_options = ":http-caching=500";
+            vlc.playlist.items.clear();
+            var options = new Array(str_options);
+            var url = 'http://' + cameraHost + ':' + cameraPort + '/videostream.asf?' + cameraAuth;
+            console.log(url);
+            vlc.playlist.add(url, 'live video', options);
+            vlc.playlist.play();
+
+            vlc.audio.volume = 200;
+            // } else {
+            //     alert('VLC Plugin is not found');
+            //     hideVLCPlugin();
+            // }
+        }
+
+        function moveCamera(dir, stop) {
+            makeCameraCall(dir, stop);
+        }
+
+        function makeCameraCall(command, stop) {
+            try {
+
+                $.ajax({
+                    url: 'http://' + cameraHost + ':' + cameraPort + '/decoder_control.cgi?command=' + command + '&' + cameraAuth,
+                    dataType: 'jsonp',
+                    error: function() {
+                        if (stop)
+                            makeCameraCall(1);
+                    }
+                });
+
+            } catch (ex) {}
+        }
+
+        var params = {};
+
+        function getParams() {
+            xhr = $.ajax({
+                url: 'http://' + cameraHost + ':' + cameraPort + '/get_params.cgi?' + cameraAuth,
+                dataType: 'script'
+            }).done(function() {
+                params.alarm_http_url = alarm_http_url;
+                params.alarm_http = alarm_http;
+
+                $('#cameraAlarmHttp').prop('checked', alarm_http == 1);
+                if (alarm_http == 1)
+                    $('#cameraAlarmHttpUrlDiv').show();
+                else
+                    $('#cameraAlarmHttpUrlDiv').hide();
+                $('#cameraAlarmHttpUrl').val(alarm_http_url);
+            });
+        }
+
+        function getStatus() {
+            xhr = $.ajax({
+                url: 'http://' + cameraHost + ':' + cameraPort + '/get_status.cgi?' + cameraAuth,
+                dataType: 'script'
+            }).done(function() {
+                parseStatus();
+            });
+        }
+
+        function parseStatus() {
+            var result = {
+                alias: '',
+                alarm_status: '',
+                alarm_status_str: '',
+                ddns_status: '',
+                ddns_status_str: '',
+                ddns_host: '',
+                wifi_status: '',
+                upnp_status: '',
+                upnp_status_str: ''
+            };
+            if (alarm_status) {
+                console.log(alarm_status);
+                result.alarm_status = alarm_status;
+                switch (alarm_status) {
+                    case 0:
+                        result.alarm_status_str = 'no alarm';
+                        break
+                    case 1:
+                        result.alarm_status_str = 'motion alarm';
+                        break
+                    case 2:
+                        result.alarm_status_str = 'input alarm';
+                        break
+                }
+            }
+
+            if (ddns_status) {
+                result.ddns_status = ddns_status;
+                switch (ddns_status) {
+                    case 0:
+                        result.ddns_status_str = 'No Action';
+                        break
+                    case 1:
+                        result.ddns_status_str = 'It\'s connecting...';
+                        break
+                    case 2:
+                        result.ddns_status_str = 'Can\'t connect to the Server';
+                        break
+                    case 3:
+                        result.ddns_status_str = 'Dyndns Succeed';
+                        break
+                    case 4:
+                        result.ddns_status_str = 'DynDns Failed: Dyndns.org Server Error';
+                        break
+                    case 5:
+                        result.ddns_status_str = 'DynDns Failed: Incorrect User or Password';
+                        break
+                    case 6:
+                        result.ddns_status_str = 'DynDns Failed: Need Credited User';
+                        break
+                    case 7:
+                        result.ddns_status_str = 'DynDns Failed: Illegal Host Format';
+                        break
+                    case 8:
+                        result.ddns_status_str = 'DynDns Failed: The Host Does not Exist';
+                        break
+                    case 9:
+                        result.ddns_status_str = 'DynDns Failed: The Host Does not Belong to You';
+                        break
+                    case 10:
+                        result.ddns_status_str = 'DynDns Failed: Too Many or Too Few Hosts';
+                        break
+                    case 11:
+                        result.ddns_status_str = 'DynDns Failed: The Host is Blocked for Abusing';
+                        break
+                    case 12:
+                        result.ddns_status_str = 'DynDns Failed: Bad Reply from Server';
+                        break
+                    case 13:
+                        result.ddns_status_str = 'DynDns Failed: Bad Reply from Server';
+                        break
+                    case 14:
+                        result.ddns_status_str = 'Oray Failed: Bad Reply from Server';
+                        break
+                    case 15:
+                        result.ddns_status_str = 'Oray Failed: Incorrect User or Password';
+                        break
+                    case 16:
+                        result.ddns_status_str = 'Oray Failed: Incorrect Hostname';
+                        break
+                    case 17:
+                        result.ddns_status_str = 'Oray Succeed';
+                        break
+                    case 18:
+                        result.ddns_status_str = 'Reserved';
+                        break
+                    case 19:
+                        result.ddns_status_str = 'Reserved';
+                        break
+                    case 20:
+                        result.ddns_status_str = 'Reserved';
+                        break
+                    case 21:
+                        result.ddns_status_str = 'Reserved';
+                        break
+                }
+            }
+
+            if (upnp_status) {
+                result.upnp_status = upnp_status;
+                switch (upnp_status) {
+                    case 0:
+                        result.upnp_status_str = 'No Action';
+                        break
+                    case 1:
+                        result.upnp_status_str = 'Succeed';
+                        break
+                    case 2:
+                        result.upnp_status_str = 'Device System Error';
+                        break
+                    case 3:
+                        result.upnp_status_str = 'Errors in Network Communication';
+                        break
+                    case 4:
+                        result.upnp_status_str = 'Errors in Chat with UPnP Device';
+                        break
+                    case 5:
+                        result.upnp_status_str = 'Rejected by UPnP Device, Maybe Port Conflict';
+                        break
+                }
+            }
+            return result;
+        }
+    </script>
+
+    <style>
+        body {
+            padding-top: 70px;
+            padding-bottom: 30px;
+        }
+        
+        .cameraControls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background-color: rgba(0, 0, 0, 0.2);
+        }
+        
+        .cameraControls a {
+            color: #fff;
+        }
+        
+        .tab-content {
+            background-color: #fff;
+            min-height: 480px;
+            border-left: 1px solid #ddd !important;
+            border-bottom: 1px solid #ddd !important;
+            border-right: 1px solid #ddd !important;
+            padding: 10px;
+        }
+        
+        .controlIcons {
+            font-size: 24px;
+        }
+        
+        .table > tbody > tr > td,
+        .table > tbody > tr > th,
+        .table > tfoot > tr > td,
+        .table > tfoot > tr > th,
+        .table > thead > tr > td,
+        .table > thead > tr > th {
+            border: 0px;
+        }
+        
+        .foscam-dropdown .dropdown-menu {
+            position: static;
+            display: block;
+            margin-bottom: 20px;
+        }
+        
+        .foscam-showcase > p > .btn {
+            margin: 5px 0;
+        }
+        
+        .foscam-showcase .navbar .container {
+            width: auto;
+        }
+    </style>
+</head>
+
+<body role="document">
+
+    <!-- Fixed navbar -->
+    <nav class="navbar navbar-inverse navbar-fixed-top">
+        <div class="container">
+            <div class="navbar-header">
+                <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-target="#navbar" aria-expanded="false" aria-controls="navbar">
+            <span class="sr-only">Toggle navigation</span>
+            <span class="icon-bar"></span>
+            <span class="icon-bar"></span>
+            <span class="icon-bar"></span>
+          </button>
+                <a class="navbar-brand" href="#">Foscam Viewer</a>
+            </div>
+            <div id="navbar" class="navbar-collapse collapse">
+                <ul class="nav navbar-nav">
+
+                </ul>
+                <ul class="nav navbar-nav navbar-right">
+                    <li><a href="#" id="logout">Logout</a></li>
+                </ul>
+            </div>
+
+            <!--/.nav-collapse -->
+        </div>
+    </nav>
+
+    <div class="container foscam-setup" role="main">
+        <form>
+            <div class="form-group">
+                <label for="cameraHost">Camera Host/IP</label>
+                <input type="text" class="form-control" id="cameraHost" placeholder="192.168.1.8/asdf.foscamhost.com">
+            </div>
+            <div class="form-group">
+                <label for="cameraPort">Camera Port</label>
+                <input type="number" class="form-control" id="cameraPort" placeholder="80">
+            </div>
+            <div class="form-group">
+                <label for="cameraUsername">Username</label>
+                <input type="text" class="form-control" id="cameraUsername" placeholder="admin">
+            </div>
+            <div class="form-group">
+                <label for="cameraPassword">Password</label>
+                <input type="password" class="form-control" id="cameraPassword" placeholder="Password">
+            </div>
+            <input type="submit" class="btn btn-default" id="btnLogin" value="Login" />
+        </form>
+    </div>
+
+    <div class="container">
+        <div class="cameraLoginProgress progress" style="display:none">
+            <div class="progress-bar progress-bar-striped active" role="progressbar" aria-valuenow="100" aria-valuemin="0" aria-valuemax="100" style="width: 100%">
+                <span class="sr-only">Please Wait</span>
+            </div>
+        </div>
+    </div>
+    <div class="container foscam-showcase" role="main" style="max-width:1500px;height:500px">
+
+        <div class="jumbotron">
+            <div class="col-lg-6">
+
+                <img id="cameraStreamImg" src="" class="img-responsive" />
+
+                <div id="cameraVLCplugin" style="display:none">
+
+                    <embed loop="no" autoplay="no" name="vlc" id="vlc" type="application/x-vlc-plugin" style="width: 640px; height: 480px;" />
+
+                </div>
+
+                <div class="cameraControls">
+
+                    <div class="col-lg-4">
+                        <table class="table">
+                            <tr>
+                                <td></td>
+                                <td><a href="#" onclick="moveCamera(2,true);return false;" data-toggle="tooltip" data-placement="top" title="Move Up"><span class="glyphicon glyphicon-chevron-up"></span></a></td>
+                                <td></td>
+                            </tr>
+                            <tr>
+                                <td><a href="#" onclick="moveCamera(4,true);return false;" data-toggle="tooltip" data-placement="top" title="Move Left"><span class="glyphicon glyphicon-chevron-left"></span></td>
+                                    <td><a href="#" onclick="moveCamera(25,true);return false;" data-toggle="tooltip" data-placement="top" title="Center Camera"><span class="glyphicon glyphicon-screenshot"></span></a></td>
+                                <td><a href="#" onclick="moveCamera(6,true);return false;" data-toggle="tooltip" data-placement="top" title="Move Right"><span class="glyphicon glyphicon-chevron-right"></span></a></td>
+                            </tr>
+                            <tr>
+                                <td></td>
+                                <td><a href="#" onclick="moveCamera(0,true);return false;" data-toggle="tooltip" data-placement="top" title="Move Down"><span class="glyphicon glyphicon-chevron-down"></span></a></td>
+                                <td></td>
+                            </tr>
+                        </table>
+                    </div>
+                    <div class="col-lg-4 text-right">
+                        <a href="#" onclick="moveCamera(95);return false" class="controlIcons" data-toggle="tooltip" data-placement="top" title="Turn IR On"><span class="glyphicon glyphicon-eye-open"></span></a>&nbsp;
+                        <a href="#" onclick="moveCamera(94);return false" class="controlIcons" data-toggle="tooltip" data-placement="top" title="Turn IR Off"><span class="glyphicon glyphicon-eye-close"></span></a>
+                        <br>
+                        <a href="#" onclick="showVLCPlugin();return false;" class="controlIcons" data-toggle="tooltip" data-placement="top" title="Turn Sound On"><span class="glyphicon glyphicon-headphones"></span></a>&nbsp;
+                        <a href="#" onclick="hideVLCPlugin();return false;" class="controlIcons" data-toggle="tooltip" data-placement="top" title="Turn Sound Off"><span class="glyphicon glyphicon-volume-off"></span></a>
+                    </div>
+                </div>
+
+            </div>
+            <div class="col-lg-6">
+
+                <ul class="nav nav-tabs">
+                    <li role="presentation" class="active"><a href="#controls" aria-controls="controls" role="tab" data-toggle="tab">Controls</a></li>
+                    <li role="presentation"><a href="#settings" aria-controls="settings" role="tab" data-toggle="tab">Settings</a></li>
+                </ul>
+                <div class="tab-content">
+                    <div role="tabpanel" class="tab-pane active" id="controls">
+
+                        <form>
+
+                            <div class="form-group">
+                                <label for="cameraPresets">Presets</label>
+                                <select class="form-control" id="cameraPresets" onchange="moveCamera(parseInt($(this).val())+1, false);"><option value="30">1</option><option value="32">2</option><option value="34">3</option><option value="36">4</option><option value="38">5</option><option value="40">6</option><option value="42">7</option><option value="44">8</option></select>
+
+                            </div>
+
+
+                        </form>
+
+
+                    </div>
+                    <div role="tabpanel" class="tab-pane" id="settings">
+                        <form>
+
+                            <h4>HTTP Alarm</h4>
+                            <div class="checkbox">
+                                <label for="cameraAlarmHttp"><input type="checkbox" id="cameraAlarmHttp" />
+                                    HTTP Alarm Enabled</label>
+                            </div>
+                            <div class="form-group" id="cameraAlarmHttpUrlDiv">
+                                <label for="cameraAlarmHttpUrl">Alarm Http Url</label>
+                                <input type="url" id="cameraAlarmHttpUrl" class="form-control" />
+                            </div>
+                        </form>
+                    </div>
+
+                </div>
+
+            </div>
+            <div class="clearfix"></div>
+        </div>
+    </div>
+</body>
+
+</html>
